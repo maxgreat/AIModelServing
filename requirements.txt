@@ -1,0 +1,3 @@
+torch==2.1.2
+- https://download.pytorch.org/whl/cu121 --trusted-host download.pytorch.org
+xformers
