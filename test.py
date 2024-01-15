@@ -2,30 +2,56 @@ import torch
 
 from diffusers import StableVideoDiffusionPipeline
 from diffusers.utils import load_image, export_to_video
+import PIL.Image as Image
 
-print("Creating model")
-pipe = StableVideoDiffusionPipeline.from_pretrained(
-    "stabilityai/stable-video-diffusion-img2vid", torch_dtype=torch.float16, variant="fp16"
-)
-pipe.to("cuda")
-#pipe.enable_model_cpu_offload()
-pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
+import time
+import argparse
 
-# Load the conditioning image
-print("Downloading image")
-image = load_image("https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/svd/rocket.png")
-image = image.resize((1024, 573))
+parser = argparse.ArgumentParser(description='Testing environment and models')
+parser.add_argument('models', metavar='N', type=str, nargs='+',
+                    help='List of model to test from [image2vid, superresolution, objectdetection]')
+parser.add_argument('--compile', action='store_true', 
+                    help='Compile the model or not')
+parser.add_argument('--cuda', action='store_true',
+                    help='Compile the model or not')
+parser.add_argument('--input', default="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/svd/rocket.png")
+parser.add_argument('--output')
 
-w, h = image.size
-if h % 64 != 0 or w % 64 != 0:
-    width, height = map(lambda x: x - x % 64, (w, h))
-    image = image.resize((width, height))
-    print(
-        f"WARNING: Your image is of size {h}x{w} which is not divisible by 64. We are resizing to {height}x{width}!"
+args = parser.parse_args()
+
+if 'image2vid' in args.models:
+    model_name = "stabilityai/stable-video-diffusion-img2vid"
+    print(f"Testing Image to Video with model : {model_name}")
+    pipe = StableVideoDiffusionPipeline.from_pretrained(
+        model_name, torch_dtype=torch.float16, variant="fp16"
     )
+    if args.cuda:
+        pipe = pipe.to("cuda")
+    if args.compile:
+        pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
 
-generator = torch.manual_seed(42)
-print("Start generating")
-with torch.no_grad():
-    frames = pipe(image, num_frames=6, num_inference_steps=5, motion_bucket_id=127, decode_chunk_size=6, generator=generator).frames[0]
-export_to_video(frames, "generated.mp4", fps=7)
+    # Load the conditioning image
+    if args.input.startswith('http'):
+        print("Downloading image")
+        image = load_image(args.input)
+    else:
+        image = Image.open(args.input)
+
+    if image.format == 'GIF':
+        print('Converting image')
+        image.seek(0)
+        image = image.copy().convert("RGB")
+    print("Original mage size :", image.size)
+    image = image.resize((image.size[0]//2,image.size[1]//2))
+    generator = torch.manual_seed(42)
+    print("Start generating with image size :", image.size)
+    t = time.time()
+    with torch.no_grad():
+        frames = pipe(image, num_frames=14, num_inference_steps=20, motion_bucket_id=127, decode_chunk_size=6, generator=generator).frames[0]
+    print(f"Generated video in {time.time() - t} sec")
+    print('Saving video...')
+    if args.output is None:
+        args.output = 'generated.mp4'
+    export_to_video(frames, args.output, fps=7)
+    print('Done')
+    

@@ -5,7 +5,7 @@ import torch
 import torch
 import uuid
 
-from diffusers import StableVideoDiffusionPipeline
+from diffusers import StableVideoDiffusionPipeline, StableDiffusionUpscalePipeline
 from diffusers.utils import export_to_video
 
 app = Flask(__name__)
@@ -16,6 +16,9 @@ videopipe = StableVideoDiffusionPipeline.from_pretrained(
 videopipe.to("cuda")
 videopipe.unet = torch.compile(videopipe.unet, mode="reduce-overhead", fullgraph=True)
 generator = torch.manual_seed(42)
+
+superresolutionpipe = StableDiffusionUpscalePipeline.from_pretrained("stabilityai/stable-diffusion-x4-upscaler", revision="fp16", torch_dtype=torch.float16).to("cuda")
+
 
 @app.route('/video_diffusion', methods=['POST'])
 def video_diffusion():
@@ -47,6 +50,15 @@ def video_diffusion():
         return send_file(video_filename, mimetype='video/mp4')
 
     return "Invalid request", 400
+
+
+@app.route('/superresolution', methods=['POST'])
+def superresolution():
+    if 'image' not in request.files:
+        return "No image provided", 400
+        
+    file = request.files['image']
+
 
 
 if __name__ == '__main__':
