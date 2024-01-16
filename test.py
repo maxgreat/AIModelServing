@@ -42,7 +42,7 @@ if 'image2vid' in args.models:
         image.seek(0)
         image = image.copy().convert("RGB")
     print("Original mage size :", image.size)
-    image = image.resize((image.size[0]//2,image.size[1]//2))
+    image = image.resize((128, int(128*image.size[1]/image.size[0]))) #for debug purpose - to be removed
     generator = torch.manual_seed(42)
     print("Start generating with image size :", image.size)
     t = time.time()
@@ -51,7 +51,10 @@ if 'image2vid' in args.models:
     print(f"Generated video in {time.time() - t} sec")
     print('Saving video...')
     if args.output is None:
-        args.output = 'generated.mp4'
-    export_to_video(frames, args.output, fps=7)
+        args.output = 'generated.gif'
+    #export_to_video(frames, args.output, fps=7)
+    frames[0].convert("RGBA")
+    frames[0].putalpha(255)
+    frames[0].save(args.output, save_all=True, append_images=frames[1:])
     print('Done')
     
