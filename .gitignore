@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 *.gif
 *.mp4
+static/*

@@ -29,8 +29,8 @@ def offline_video_diffusion(file, filename_out):
         image.seek(0)
         image = image.copy()
     image = image.convert("RGB")
-    print("Original image size :", image.size)
-    max_size = 256
+    #print("Original image size :", image.size)
+    max_size = 64
     image = image.resize((max_size, int(max_size*image.size[1]/image.size[0]))) #for debug purpose - to be removed
     generator = torch.manual_seed(42)
     print("Start generating with image size :", image.size)
@@ -67,12 +67,12 @@ def video_diffusion():
         
     file = request.files['image']   
     if file:
-        public_folder = 'data/'  # Example folder name
+        public_folder = 'static/'  # Example folder name
         video_filename = f"generated_{uuid.uuid4().hex}.gif"
         video_filepath = os.path.join(public_folder, video_filename)
         
         # Generate a public URL for the video
-        video_url = url_for('data', filename=f'videos/{video_filename}', _external=True)
+        video_url = url_for('static', filename=video_filepath, _external=True)
 
         thread = Thread(target=offline_video_diffusion, args=(file, video_filepath))
         thread.start()
@@ -96,7 +96,7 @@ def superresolution():
         
         video_url = url_for('static', filename=f'{image_filepath}', _external=True)
 
-        thread = Thread(target=offline_video_diffusion, args=(file, image_filepath))
+        thread = Thread(target=offline_supperesolution, args=(file, image_filepath))
         thread.start()
         
         # Return the URL
