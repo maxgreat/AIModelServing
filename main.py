@@ -121,9 +121,12 @@ def superresolution():
 
 ### TEXT TO IMAGE ###
 
-def offline_imagegeneration(prompt, image_filepath, negative_prompt=None, width=None, height=None, num_inference=None):
-    if num_inference is None:
-        num_inference = 20
+def offline_imagegeneration(prompt, image_filepath, negative_prompt=None, width:int = None, height:int = None, num_inference:int = 25):
+    print(f'generating image with prompt : {prompt}, neg : {negative_prompt}, width : {width}, height : {height}, num_inference: {num_inference}')
+    if width is not None:
+        width = int(width)
+    if height is not None:
+        height = int(height)
     image = text2img(prompt=prompt, height=height, width=width, 
                      negative_prompt=negative_prompt, 
                      num_inference_steps=num_inference).images[0]
@@ -136,6 +139,8 @@ def imagegeneration():
     width = request.form.get('width')
     height = request.form.get('height')
     num_inference = request.form.get('inference_step')
+    if num_inference is None:
+        num_inference=25
 
     if prompt:
         public_folder = 'static/'
