@@ -10,10 +10,11 @@ from threading import Thread
 
 from diffusers import StableVideoDiffusionPipeline, StableDiffusionUpscalePipeline, StableDiffusionPipeline, StableDiffusionImg2ImgPipeline, StableDiffusionInpaintPipeline
 
-
-
+from celery import Celery
 
 app = Flask(__name__)
+celery = Celery(app.name, broker='your_broker_url')
+celery.conf.task_annotations = {'tasks.perform_prediction': {'rate_limit': '1/s'}}
 
 
 ### MODELS ###
@@ -28,6 +29,70 @@ videopipe.unet = torch.compile(videopipe.unet, mode="reduce-overhead", fullgraph
 generator = torch.manual_seed(42)
 
 superresolutionpipe = StableDiffusionUpscalePipeline.from_pretrained("stabilityai/stable-diffusion-x4-upscaler", variant='fp16', torch_dtype=torch.float16).to("cuda")
+
+
+
+### TASK CHECK ####
+
+@app.route('/task/<task_id>', methods=['GET'])
+def get_task_status(task_id):
+    task = celery.AsyncResult(task_id)
+
+    if task.state == 'PENDING':
+        # Job hasn't started yet
+        response = {
+            'state': task.state,
+            'status': 'Pending...'
+        }
+    elif task.state == 'SUCCESS':
+        # Task completed successfully, return the result
+        return jsonify(task.result)
+    elif task.state != 'FAILURE':
+        response = {
+            'state': task.state,
+            'result': task.result,
+            'status': str(task.info)  # Optional: additional info about the task
+        }
+    else:
+        # Something went wrong in the background job
+        response = {
+            'state': task.state,
+            'status': str(task.info),  # Error message or info
+        }
+    return jsonify(response)
+
+
+### UPSCALING ###
+
+@celery.task
+def offline_supperesolution(file, file_out, prompt=None):
+    image = Image.open(BytesIO(file.read()))
+    if image.format == 'GIF':
+        print('Converting image')
+        image.seek(0)
+        image = image.copy()
+    image = image.convert("RGB")
+    upscaled_image = superresolutionpipe(prompt=prompt, image=image).images[0]
+    upscaled_image.save(file_out)
+    return upscaled_image
+
+@app.route('/superresolution', methods=['POST'])
+def superresolution():
+    if 'image' not in request.files:
+        return "No image provided", 400
+        
+    file = request.files['image']   
+    prompt = request.form.get('prompt')
+
+    if file:
+        data = {}
+        image_filename = f"generated_{uuid.uuid4().hex}.png"
+        data['file_out'] = os.path.join(public_folder, image_filename)
+        task = offline_supperesolution.delay(request.json)
+        return jsonify({"task_id": task.id}), 202
+        
+    return "Invalid request", 400
+
 
 
 
@@ -82,41 +147,6 @@ def video_diffusion():
 
     return "Invalid request", 400
 
-
-
-### UPSCALING ###
-
-def offline_supperesolution(file, file_out, prompt=None):
-    image = Image.open(BytesIO(file.read()))
-    if image.format == 'GIF':
-        print('Converting image')
-        image.seek(0)
-        image = image.copy()
-    image = image.convert("RGB")
-    upscaled_image = superresolutionpipe(prompt=prompt, image=image).images[0]
-    upscaled_image.save(file_out)
-
-@app.route('/superresolution', methods=['POST'])
-def superresolution():
-    if 'image' not in request.files:
-        return "No image provided", 400
-        
-    file = request.files['image']   
-    prompt = request.form.get('prompt')
-
-    if file:
-        public_folder = 'static/'
-        image_filename = f"generated_{uuid.uuid4().hex}.png"
-        image_filepath = os.path.join(public_folder, image_filename)
-        
-        video_url = url_for('static', filename=f'{image_filepath}', _external=True)
-        thread = Thread(target=offline_supperesolution, args=(file, image_filepath, prompt))
-        thread.start()
-        
-        # Return the URL
-        return jsonify({'image_url': video_url})
-
-    return "Invalid request", 400
 
 
 ### TEXT TO IMAGE ###
