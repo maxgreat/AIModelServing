@@ -15,6 +15,10 @@ Run the app :
 
 ## REQUEST
 
-<address>/<modelname> will return a task ID
+    <address>/<modelname> 
 
-Get progress and result with <address>/task/<task-id>
+will return a task ID
+
+Get progress and result with :
+    
+    <address>/task/<task-id>
