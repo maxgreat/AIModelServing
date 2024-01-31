@@ -35,10 +35,7 @@ videopipe = StableVideoDiffusionPipeline.from_pretrained(
 )
 if torch.cuda.is_available():
     videopipe = videopipe.to('cuda')
-videopipe.unet = torch.compile(videopipe.unet, mode="reduce-overhead", fullgraph=True, options={
-        "truncate_long_and_double": True,
-        "precision": torch.float16,
-    })
+videopipe.unet = torch.compile(videopipe.unet, mode="reduce-overhead", fullgraph=True)
 generator = torch.manual_seed(42)
 
 superresolutionpipe = StableDiffusionUpscalePipeline.from_pretrained("stabilityai/stable-diffusion-x4-upscaler", variant='fp16', torch_dtype=torch.float16)
