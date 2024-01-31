@@ -102,23 +102,24 @@ def superresolution():
         return "No image provided", 400
 
     image = request.files['image']
-    prompt = request.form.get('prompt', '')  # Default to empty string if not provided
+    if image:
+        prompt = request.form.get('prompt', '')  # Default to empty string if not provided
+        # Read the image and prepare data for the task
+        image_data = image.read()
+        task_data = {'image_data': image_data, 'prompt': prompt}
 
-    # Read the image and prepare data for the task
-    image_data = image.read()
-    task_data = {'image_data': image_data, 'prompt': prompt}
-
-    # Launch the task
-    task = offline_supperesolution.delay(task_data)
-    return jsonify({"task_id": task.id}), 202
+        # Launch the task
+        task = offline_supperesolution.delay(task_data)
+        return jsonify({"task_id": task.id}), 202
         
-    return "Invalid request", 400
+    return "Invalid request : cannot read image", 400
 
 
 
 
 ### IMAGE TO VIDEO
 
+@celery.task
 def offline_video_diffusion(file, filename_out):
     image = Image.open(BytesIO(file.read()))
     if image.format == 'GIF':
@@ -143,6 +144,8 @@ def offline_video_diffusion(file, filename_out):
     
     #video_filename = f"generated_{uuid.uuid4().hex}.gif"
     frames[0].save(filename_out, save_all=True, append_images=frames[1:])
+    video_url = url_for('static', filename=filename_out, _external=True)
+    return video_url
 
 
 @app.route('/video_diffusion', methods=['POST'])
@@ -156,22 +159,17 @@ def video_diffusion():
         public_folder = 'static/'  # Example folder name
         video_filename = f"generated_{uuid.uuid4().hex}.gif"
         video_filepath = os.path.join(public_folder, video_filename)
-        
-        # Generate a public URL for the video
-        video_url = url_for('static', filename=video_filepath, _external=True)
 
-        thread = Thread(target=offline_video_diffusion, args=(file, video_filepath))
-        thread.start()
-        
-        # Return the URL
-        return jsonify({'video_url': video_url})
+        task = offline_video_diffusion.delay(file, video_filepath)
+        return jsonify({"task_id": task.id}), 202
 
-    return "Invalid request", 400
+    return "Invalid request : cannot read image", 400
 
 
 
 ### TEXT TO IMAGE ###
 
+@celery.task
 def offline_imagegeneration(prompt, image_filepath, negative_prompt=None, width:int = None, height:int = None, num_inference:int = 25):
     print(f'generating image with prompt : {prompt}, neg : {negative_prompt}, width : {width}, height : {height}, num_inference: {num_inference}')
     if width is not None:
@@ -182,6 +180,8 @@ def offline_imagegeneration(prompt, image_filepath, negative_prompt=None, width:
                      negative_prompt=negative_prompt, 
                      num_inference_steps=num_inference).images[0]
     image.save(image_filepath)
+    image_url = url_for('static', filename=f'{image_filepath}', _external=True)
+    return image_url
 
 @app.route('/imagegeneration', methods=['POST'])
 def imagegeneration():
@@ -198,12 +198,8 @@ def imagegeneration():
         image_filename = f"generated_{uuid.uuid4().hex}.png"
         image_filepath = os.path.join(public_folder, image_filename)
         
-        image_url = url_for('static', filename=f'{image_filepath}', _external=True)
-        thread = Thread(target=offline_imagegeneration, args=(prompt, image_filepath, negative_prompt, width, height, num_inference))
-        thread.start()
-        
-        # Return the URL
-        return jsonify({'image_url': image_url})
+        task = offline_video_diffusion.delay(prompt, image_filepath, negative_prompt, width, height, num_inference)
+        return jsonify({"task_id": task.id}), 202
 
     return "Invalid request", 400
 
