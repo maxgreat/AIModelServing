@@ -13,7 +13,7 @@ from diffusers import StableVideoDiffusionPipeline, StableDiffusionUpscalePipeli
 from celery import Celery
 
 app = Flask(__name__)
-celery = Celery(app.name, broker='your_broker_url')
+celery = Celery(app.name, broker='amqp://localhost')
 celery.conf.task_annotations = {'tasks.perform_prediction': {'rate_limit': '1/s'}}
 
 
@@ -65,31 +65,37 @@ def get_task_status(task_id):
 ### UPSCALING ###
 
 @celery.task
-def offline_supperesolution(file, file_out, prompt=None):
-    image = Image.open(BytesIO(file.read()))
+def offline_supperesolution(data):
+    print('Launch offline superresolution with Celery')
+    image_data = data['image_data']
+    prompt = data['prompt']
+    image = Image.open(BytesIO(image_data))
+    image_filename = f"generated_{uuid.uuid4().hex}.png"
     if image.format == 'GIF':
         print('Converting image')
         image.seek(0)
         image = image.copy()
     image = image.convert("RGB")
-    upscaled_image = superresolutionpipe(prompt=prompt, image=image).images[0]
-    upscaled_image.save(file_out)
+    upscaled_image = superresolutionpipe(prompt=prompt, 
+                                         image=image).images[0]
+    #upscaled_image.save(file_out)
     return upscaled_image
 
 @app.route('/superresolution', methods=['POST'])
 def superresolution():
     if 'image' not in request.files:
         return "No image provided", 400
-        
-    file = request.files['image']   
-    prompt = request.form.get('prompt')
 
-    if file:
-        data = {}
-        image_filename = f"generated_{uuid.uuid4().hex}.png"
-        data['file_out'] = os.path.join(public_folder, image_filename)
-        task = offline_supperesolution.delay(request.json)
-        return jsonify({"task_id": task.id}), 202
+    image = request.files['image']
+    prompt = request.form.get('prompt', '')  # Default to empty string if not provided
+
+    # Read the image and prepare data for the task
+    image_data = image.read()
+    task_data = {'image_data': image_data, 'prompt': prompt}
+
+    # Launch the task
+    task = offline_supperesolution.delay(task_data)
+    return jsonify({"task_id": task.id}), 202
         
     return "Invalid request", 400
 
