@@ -18,17 +18,32 @@ celery.conf.task_annotations = {'tasks.perform_prediction': {'rate_limit': '1/s'
 
 
 ### MODELS ###
-text2img = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", torch_dtype=torch.float16).to('cuda')
-#img2img = StableDiffusionImg2ImgPipeline(**text2img.components).to('cuda')
-#inpaint = StableDiffusionInpaintPipeline(**text2img.components).to('cuda')
+text2img = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", torch_dtype=torch.float16)
+if torch.cuda.is_available():
+    text2img = text2img.to('cuda')
+
+img2img = StableDiffusionImg2ImgPipeline(**text2img.components)
+if torch.cuda.is_available():
+    img2img = img2img.to('cuda')
+
+inpaint = StableDiffusionInpaintPipeline(**text2img.components)
+if torch.cuda.is_available():
+    inpaint = inpaint.to('cuda')
 
 videopipe = StableVideoDiffusionPipeline.from_pretrained(
     "stabilityai/stable-video-diffusion-img2vid", torch_dtype=torch.float16, variant="fp16"
-).to("cuda")
-videopipe.unet = torch.compile(videopipe.unet, mode="reduce-overhead", fullgraph=True)
+)
+if torch.cuda.is_available():
+    videopipe = videopipe.to('cuda')
+videopipe.unet = torch.compile(videopipe.unet, mode="reduce-overhead", fullgraph=True, options={
+        "truncate_long_and_double": True,
+        "precision": torch.float16,
+    })
 generator = torch.manual_seed(42)
 
-superresolutionpipe = StableDiffusionUpscalePipeline.from_pretrained("stabilityai/stable-diffusion-x4-upscaler", variant='fp16', torch_dtype=torch.float16).to("cuda")
+superresolutionpipe = StableDiffusionUpscalePipeline.from_pretrained("stabilityai/stable-diffusion-x4-upscaler", variant='fp16', torch_dtype=torch.float16)
+if torch.cuda.is_available():
+    superresolutionpipe = superresolutionpipe.to('cuda')
 
 
 
