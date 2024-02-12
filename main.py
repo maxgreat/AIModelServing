@@ -90,10 +90,13 @@ def get_task_status(task_id):
 
 @celery.task
 def offline_supperesolution(data):
-    print('Launch offline superresolution with Celery')
+    print('Launch offline superresolution with Celery with data :', data)
     image_data = data['image_data']
     if image_data is not None:
         prompt = data['prompt']
+        num_inference_steps = data['num_inference_steps']
+        if num_inference_steps is None:
+            num_inference_steps = 1
         image = Image.open(BytesIO(image_data))
         image_filename = f"generated_{uuid.uuid4().hex}.png"
         if image.format == 'GIF':
@@ -102,7 +105,8 @@ def offline_supperesolution(data):
             image = image.copy()
         image = image.convert("RGB")
         upscaled_image = superresolutionpipe(prompt=prompt, 
-                                            image=image).images[0]
+                                            image=image,
+                                            num_inference_steps=num_inference_steps).images[0]
         #upscaled_image.save(file_out)
         return upscaled_image
     return None
@@ -132,6 +136,8 @@ def superresolution():
 
 @celery.task
 def offline_video_diffusion(file, filename_out):
+    if file is None:
+        return
     image = Image.open(BytesIO(file.read()))
     if image.format == 'GIF':
         print('Converting image')
@@ -181,7 +187,7 @@ def video_diffusion():
 ### TEXT TO IMAGE ###
 
 @celery.task
-def offline_imagegeneration(prompt, image_filepath, negative_prompt=None, width:int = None, height:int = None, num_inference:int = 25):
+def offline_imagegeneration(prompt, image_filepath, image_url, negative_prompt=None, width:int = None, height:int = None, num_inference:int = 25):
     print(f'generating image with prompt : {prompt}, neg : {negative_prompt}, width : {width}, height : {height}, num_inference: {num_inference}')
     if width is not None:
         width = int(width)
@@ -191,25 +197,37 @@ def offline_imagegeneration(prompt, image_filepath, negative_prompt=None, width:
                      negative_prompt=negative_prompt, 
                      num_inference_steps=num_inference).images[0]
     image.save(image_filepath)
-    image_url = url_for('static', filename=f'{image_filepath}', _external=True)
     return image_url
 
 @app.route('/imagegeneration', methods=['POST'])
 def imagegeneration():
+    for key, value in request.form.items():
+        print(f'{key}: {value}')
     prompt = request.form.get('prompt')
-    negative_prompt = request.form.get('neg_prompt')
+    negative_prompt = request.form.get('negative_prompt')
     width = request.form.get('width')
+    if width is None:
+        width = 128
+    else:
+        width = int(width)
     height = request.form.get('height')
+    if height is None:
+        height = 128
+    else:
+        height = int(height)
     num_inference = request.form.get('inference_step')
     if num_inference is None:
-        num_inference=25
+        num_inference = 25
+    else:
+        num_inference = int(num_inference)
 
     if prompt:
         public_folder = 'static/'
         image_filename = f"generated_{uuid.uuid4().hex}.png"
         image_filepath = os.path.join(public_folder, image_filename)
-        
-        task = offline_video_diffusion.delay(prompt, image_filepath, negative_prompt, width, height, num_inference)
+        image_url = url_for('static', filename=f'{image_filepath}', _external=True)
+        print('Calling offline video diffusion with : ',prompt, image_filepath, negative_prompt, width, height, num_inference)
+        task = offline_imagegeneration.delay(prompt, image_filepath, image_url, negative_prompt, width, height, num_inference)
         return jsonify({"task_id": task.id}), 202
 
     return "Invalid request", 400
