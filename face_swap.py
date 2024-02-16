@@ -7,6 +7,7 @@ from insightface.data import get_image as ins_get_image
 import argparse
 import tqdm
 import numpy as np
+import subprocess
 
 args = argparse.ArgumentParser(formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=100))
 args.add_argument('-r', '--reference', help='select an source image', dest='reference_path')
@@ -33,8 +34,9 @@ if __name__ == '__main__':
     reference_face = app.get(img_reference)[-1]   
 
     if os.path.isdir(args.target_path):
-        fun = lambda x : os.path.isfile(os.path.join(args.target_path,x))
-        files_list = filter(fun, os.listdir(args.target_path))
+        fun_fullpath = lambda x: os.path.join(args.target_path,x)
+        fun_exists = lambda x : os.path.isfile(x)
+        files_list = filter(fun_exists, map(fun_fullpath, os.listdir(args.target_path)))
 
         # Create a list of files in directory along with the size
         size_of_file = [
@@ -45,12 +47,10 @@ if __name__ == '__main__':
         fun = lambda x : x[1]
         if not os.path.exists(args.output_path):
             os.mkdir(args.output_path)
-        for f,_ in sorted(size_of_file,key = fun): 
-            if f in filesToExclude:
-                continue
-            
+        for f,_ in sorted(size_of_file,key = fun):
             output_image_path = args.output_path + os.path.basename(f)
-            if os.path.exists(output_image_path):
+            if f in filesToExclude or os.path.exists(output_image_path):
+                print(f"Skipping {f}")
                 continue
             print("Handling :", f)  
             
@@ -68,6 +68,7 @@ if __name__ == '__main__':
                 list_image = []
                 for i in tqdm.tqdm(range(img.n_frames)):
                     img.seek(i)
+                    faces = app.get(img)
                     duration.append(img.info['duration'])
                     new_file_name = f'temp/{os.path.basename(f).split(".")[0]}_{i}.png'
                     frame = swap_face(img, faces, reference_face)[0]
@@ -76,9 +77,25 @@ if __name__ == '__main__':
                 image_output = Image.open(list_image[0])
                 image_output.save(output_image_path, save_all=True, append_images=[Image.open(i) for i in list_image[1:]], duration=duration, loop=0)
                 [os.remove(i) for i in list_image]
-            elif(f.lower().endswith(('mp4'))): #video
-                print('as a video')
-
-
-                np.stack(arrays, axis=0).shape
-                #ffmpeg -i main.m4v -i commentary.m4v -c copy -map 0:v -map 0:a -map 1:a final.m4v
+            elif(f.lower().endswith(('mp4', '.avi'))): #video
+                print(f'{f} is a video')
+                cap = cv2.VideoCapture(f, apiPreference=cv2.CAP_FFMPEG )
+                framerate = int(cap.get(cv2.CAP_PROP_FPS))
+                nbframe = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                frame_width = int(cap.get(3))
+                frame_height = int(cap.get(4))
+                out = cv2.VideoWriter(output_image_path,cv2.VideoWriter_fourcc('M','J','P','G'), framerate, (frame_width,frame_height))
+                for i in tqdm.tqdm(range(nbframe)):
+                    ret, frame = cap.read()
+                    # if frame is read correctly ret is True
+                    if not ret:
+                        print(f'End of video after {i} frames')
+                        break
+                    faces = app.get(frame)
+                    frame = swap_face(frame, faces, reference_face)[0]
+                    out.write(frame)
+                cap.release()
+                out.release()
+                #np.stack(arrays, axis=0).shape
+                subprocess.run(f"ffmpeg -i {output_image_path} -i {f} -c copy -map 0:v -map 0:a -map 1:a {output_image_path}".split(' '))
+                
