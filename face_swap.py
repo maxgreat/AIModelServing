@@ -8,6 +8,7 @@ import argparse
 import tqdm
 import numpy as np
 import subprocess
+import queue
 
 args = argparse.ArgumentParser(formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=100))
 args.add_argument('-r', '--reference', help='select an source image', dest='reference_path')
@@ -23,7 +24,7 @@ app.prepare(ctx_id=0)
 swapper = insightface.model_zoo.get_model('models/inswapper_128.onnx', providers=['CUDAExecutionProvider'])
 
 
-def swap_face(frame, face, reference_face):
+def swap_face(frame, faces, reference_face):
     for face in faces:
         frame = swapper.get(frame, face, reference_face, paste_back=True)
     return frame
@@ -59,7 +60,8 @@ if __name__ == '__main__':
                 img = cv2.imread(f)
                 faces = app.get(img)
                 res = img.copy()
-                frame = swap_face(res, faces, reference_face)[0]
+                frame = swap_face(res, faces, reference_face)
+                print("Frame shape :", frame.shape)
                 cv2.imwrite(output_image_path, frame)
             elif(f.lower().endswith(('gif'))): #gif
                 print('as a gif')
@@ -71,7 +73,7 @@ if __name__ == '__main__':
                     faces = app.get(img)
                     duration.append(img.info['duration'])
                     new_file_name = f'temp/{os.path.basename(f).split(".")[0]}_{i}.png'
-                    frame = swap_face(img, faces, reference_face)[0]
+                    frame = swap_face(img, faces, reference_face)
                     cv2.imwrite(new_file_name, frame)
                     list_image.append(new_file_name)
                 image_output = Image.open(list_image[0])
@@ -84,18 +86,35 @@ if __name__ == '__main__':
                 nbframe = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 frame_width = int(cap.get(3))
                 frame_height = int(cap.get(4))
-                out = cv2.VideoWriter(output_image_path,cv2.VideoWriter_fourcc('M','J','P','G'), framerate, (frame_width,frame_height))
+                out = cv2.VideoWriter(output_image_path,cv2.VideoWriter_fourcc(*"mp4v"), framerate, (frame_width,frame_height))
+                #q = queue.Queue()
+                frames_batch = []
                 for i in tqdm.tqdm(range(nbframe)):
                     ret, frame = cap.read()
-                    # if frame is read correctly ret is True
-                    if not ret:
+                    
+                    # if frame is read correctly ret is True, and add frame to batch
+                    if ret:
+                        frames_batch.append(frame)
+                        
+                        # When batch size is met or it's the last frame, process the batch
+                        if len(frames_batch) == args.batch_size or i == nbframe - 1:
+                            # Here, swap_face function needs to be able to handle batches of frames.
+                            # faces detection for all frames in batch
+                            faces_batch = [app.get(frame) for frame in frames_batch]  
+                            # Processing batch of frames for face swapping
+                            processed_frames = [swap_face(frame, faces, reference_face) for frame, faces in zip(frames_batch, faces_batch)]
+                            
+                            # Write each processed frame to output
+                            for processed_frame in processed_frames:
+                                out.write(processed_frame)
+                            
+                            # Clear the frames batch after processing
+                            frames_batch = []
+                    else:
                         print(f'End of video after {i} frames')
                         break
-                    faces = app.get(frame)
-                    frame = swap_face(frame, faces, reference_face)[0]
-                    out.write(frame)
                 cap.release()
                 out.release()
                 #np.stack(arrays, axis=0).shape
-                subprocess.run(f"ffmpeg -i {output_image_path} -i {f} -c copy -map 0:v -map 0:a -map 1:a {output_image_path}".split(' '))
+                #subprocess.run(f"ffmpeg -i {output_image_path} -i {f} -c copy -map 0:v -map 0:a? -map 1:a {output_image_path}".split(' '))
                 
