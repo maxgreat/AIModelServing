@@ -50,8 +50,11 @@ if __name__ == '__main__':
             os.mkdir(args.output_path)
         for f,_ in sorted(size_of_file,key = fun):
             output_image_path = args.output_path + os.path.basename(f)
-            if f in filesToExclude or os.path.exists(output_image_path):
+            if os.path.basename(f) in filesToExclude or os.path.basename(f).replace(' ', '') in filesToExclude:
                 print(f"Skipping {f}")
+                continue
+            if os.path.exists(output_image_path) or os.path.exists(output_image_path.replace(' ', '')):
+                print("Already exists")
                 continue
             print("Handling :", f)  
             
@@ -63,17 +66,22 @@ if __name__ == '__main__':
                 frame = swap_face(res, faces, reference_face)
                 print("Frame shape :", frame.shape)
                 cv2.imwrite(output_image_path, frame)
-            elif(f.lower().endswith(('gif'))): #gif
-                print('as a gif')
-                img = cv2.imread(f)
+            elif(f.lower().endswith(('gif')) or f.lower().endswith(('webp'))): #gif
+                print('as a gif or a webp')
+                img = Image.open(f)
                 duration = []
                 list_image = []
                 for i in tqdm.tqdm(range(img.n_frames)):
                     img.seek(i)
-                    faces = app.get(img)
-                    duration.append(img.info['duration'])
+                    try:
+                        duration.append(img.info['duration'])
+                    except Exception:
+                        duration.append(0)
                     new_file_name = f'temp/{os.path.basename(f).split(".")[0]}_{i}.png'
-                    frame = swap_face(img, faces, reference_face)
+                    img.save(new_file_name)
+                    img_png = cv2.imread(new_file_name)
+                    faces = app.get(img_png)
+                    frame = swap_face(img_png, faces, reference_face)
                     cv2.imwrite(new_file_name, frame)
                     list_image.append(new_file_name)
                 image_output = Image.open(list_image[0])
