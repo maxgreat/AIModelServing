@@ -12,7 +12,7 @@ import queue
 
 args = argparse.ArgumentParser(formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=100))
 args.add_argument('-r', '--reference', help='select an source image', dest='reference_path')
-args.add_argument('-e', '--exclude', help='directory with images to exclude', dest='exclude_path')
+args.add_argument('-e', '--exclude', nargs='*', help='directory with images to exclude', dest='exclude_path')
 args.add_argument('-t', '--target', help='select an target image, video or directory', dest='target_path')
 args.add_argument('-o', '--output', help='select output file or directory', dest='output_path')
 args.add_argument('--similar-face-distance', help='face distance used for recognition', dest='similar_face_distance', type=float, default=0.85)
@@ -44,7 +44,10 @@ if __name__ == '__main__':
             (f,os.stat(os.path.join(args.target_path, f)).st_size)
             for f in files_list
         ]
-        filesToExclude = os.listdir(args.exclude_path)
+        filesToExclude = []
+        for directory in args.exclude_path:
+            print("Excluding dir : ", directory)
+            filesToExclude += os.listdir(directory)
         fun = lambda x : x[1]
         if not os.path.exists(args.output_path):
             os.mkdir(args.output_path)
@@ -71,7 +74,11 @@ if __name__ == '__main__':
                 img = Image.open(f)
                 duration = []
                 list_image = []
-                for i in tqdm.tqdm(range(img.n_frames)):
+                if not hasattr(img, 'n_frames'):
+                    n_frames = 1
+                else:
+                    n_frames = img.n_frames
+                for i in tqdm.tqdm(range(n_frames)):
                     img.seek(i)
                     try:
                         duration.append(img.info['duration'])
